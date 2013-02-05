@@ -16,8 +16,8 @@
 **Natural language features:**
 
 1. Fractions (e.g. 0.45 hour ago) get translated into "half an hour ago"
-1. Indication of time using "at": `[d#.m#.y##]AT h#:m##` - outputs "23.3.2012 at 13:23" in English or "23.3.2012 â 13:23" in Russian. Note that no change was required in the format string if spite of the different language 
-1. Genetive form (not used in English): Posted on `AT[D__]` = Posted on Wednesday = Îòâåò â Ñğåäó - compare with `Posted on D__` where it would be "Îòâåò â Ñğåäà" (not the correct word form)
+1. Indication of time using "at": `[d#.m#.y##]AT h#:m##` - outputs "23.3.2012 at 13:23" in English or "23.3.2012 Ğ² 13:23" in Russian. Note that no change was required in the format string if spite of the different language 
+1. Genetive form (not used in English): Posted on `AT[D__]` = Posted on Wednesday = Ğ”Ğ¾Ğ±Ğ°Ğ²Ğ»ĞµĞ½Ğ¾ Ğ² ÑÑ€ĞµĞ´Ñƒ - compare with `Posted on D__` where it would be "Ğ”Ğ¾Ğ±Ğ°Ğ²Ğ»ĞµĞ½Ğ¾ Ğ² ÑÑ€ĞµĞ´Ğ°" (not the correct word form)
 
 ## Usage 
 ```PHP
@@ -37,7 +37,7 @@ php artisan bundle:install datefmt
 Then put this into your **application/bundles.php**:
 
 ```PHP
-datefmt' => array(
+'datefmt' => array(
   'autoloads' => array(
     'map' => array('DateFmt' => '(:bundle)/datefmt.php')
   )

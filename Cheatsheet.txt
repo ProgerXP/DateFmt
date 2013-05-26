@@ -1,0 +1,101 @@
+This is a brief format description of the DateFmt class; full reference is located at:
+  http://proger.i-forge.net/DateFmt/cWq
+
+== Sample format strings with produced results ==
+  Now is D__, AT[d# of M__ y##] (h##ms).
+  = Now is Thursday, 1 of July 2011 (08:14:33 PM).
+
+  Last commit was AGO[d.h].
+  = Last commit was 40 days 14 hours ago.
+
+  It was on H#:m## A.M..
+  = It was on 20:14 PM.
+
+  This entry was posted AGO[*]AT D__, d# M__ y##.
+  = This entry was posted 50 minutes ago at Thursday, 1 July 2011.
+
+  This document was created on d#my.
+  = This document was created on 12/01/2011.
+
+  A diary post saying AT[d# m__ y##] in its top right corner.
+  = A diary post saying 12 december 2012 in its top right corner.
+
+  This reply was posted AGO[s-d]IF-FAR[on d#my]AT D__.
+  = This reply was posted after 3 hours at Thursday.
+  = This reply was posted on 10/08/2011 at Wednesday.
+
+  Posted at d##-M_-y# h##m (AGO[h-y]_ since last post and AGO[*]_ before next reply).
+  = Posted at 01-Jul-11 08:44 PM (half an hour since last post and 5 minutes before next reply).
+
+== Simple format strings ==
+  = d# or d## == day (9 or 09);
+  = mo# or mo## == month (1 or 01) - note that it's "mo" instead of "m" which is
+    used to specify minutes;
+  = w# or w## == week number (2 or 02);
+  = y# or y## == year (11 or 2011) - note that for year a single hash doesn't mean
+    "pad to 1 digit" but "pad to 2 digits" as it makes no sense;
+  = s# or s## == seconds (5 or 05);
+  = m# or m## == minutes (2 or 02) - don't confuse with month which is "mo";
+  = h# or h## == hours in 12-hour format (8 or 08) - character case makes it different from "H";
+  = H# or H## == hours in 24-hour format (8 or 08).
+
+=== Full date/time strings ===
+  = d#my or d##my == 9.01.2011 or 09.01.2011;
+  = d#m or d##m == without year: 9.01 or 09.01;
+  = h#ms or h##ms == 2:08:50 or 02:08:50 - here unlike with H## character case of
+    h doesn't mattern - whether to use 12-hour format or not is language-dependent anyway;
+  = h#m or h##m == without seconds: 2:08 or 02:08.
+
+=== Names ===
+  = d_ or D_    == short day name (mon or Mon);
+  = d~__ or D~__  == full day name (monday or Monday);
+  = m_ or M_    == short month name (jan or Jan);
+  = m~__ or M~__  == full month name (january or January).
+
+== Relative time - [AGO] ==
+Format:   AGO[ranges]
+Or:       AGO-SHORT[ranges]
+Example:  AGO[smhd]     => 1 hour ago
+
+"ago" and "after" words can be suppressed by trailing underscore: AGO[ranges]_
+
+=== Ranges ===
+  1. s (seconds);
+  1. m (minutes) or i - it's the same;
+  1. h (hours);
+  1. d (days);
+  1. w (weeks);
+  1. o (months) - m can also be used to specify months - for this it must have
+     m somewhere before it ("smhdm"), be prefixed with either of d, b, w ("dm")
+     or be followed by y ("my").
+     * if you're having problems and m is mistaken for months instead of minutes use
+       the alias of latter (i): AGO[id] specifies minutes and days.
+  1. y (years).
+
+==== Shortcut ranges ====
+  = t implies time ranges: smh;
+  = * implies all defined ranges:
+  = b a special range that works exactly as d unless distance between 2 dates is
+     3 days or shorter - in this case instead of robot-like "2 days ago" message
+     "yesterday" will be output. It also works with future dates: after 0 days ->
+     tomorrow, after 2 days -> day after tomorrow.
+
+== IF-FAR[] and IF>n[] ==
+Format:   AGO[ranges]IF-FAR[normal format]
+Example:  AGO[smhd]IF>3[d#my, D__]    => 1 hour ago OR 01/12/2011
+
+FAR is alias to IF>n for the following ranges:
+  Complete list of ((#ranges range)) -> FAR numbers:
+  = s 60
+  = m 60
+  = h 24
+  = d (b) == 30
+  = w 4
+  = m 12
+  = y == Cannot be used - an ((#exception+s)) is thrown.
+
+  IF can be also used in following combinations:
+  1. AGO[...]IF[...]
+  1. AGO-AT[...]IF[...]
+  1. AGO-SHORT[...]IF[...]
+  1. AGO-SHORT-AT[...]IF[...]

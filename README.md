@@ -45,3 +45,9 @@ Then put this into your **application/bundles.php**:
 ```
 
 Now whenever you refer to `DateFmt` in your code its class will be autoloaded.
+
+## Limitations
+
+* Nested rules are unsupported: `[...]?|AGO[s-d]IF-FAR[[d#my]AT h#m]`
+* Multiple **IF**'s are unsupported: `AGO[d]IF>7[..]IF>21[..]IF>...`
+* Empty **IF**'s are not allowed: `AGO[h] AGO[h]IF>0[]IF>3[ (AGO[d]_)]` (this would create `11 hours ago` and `74 hours ago (2 days)`)

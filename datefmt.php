@@ -250,7 +250,7 @@ class DateFmt {
         $word = $this->strings[$key];
         isset($index) and $word = $word[$index];
 
-        $lowcase and $word = mb_strtolower($word);
+        $lowcase or $word = mb_convert_case($word, MB_CASE_TITLE);
         return $word;
       }
 
@@ -775,6 +775,9 @@ DateFmt::$languages = array(
     // h##m & h##ms
     'time without seconds' => 'h:m %', 'time with seconds' => 'h:m:s %',
 
+    // month and day names should be capitalized if the language requires them to
+    // be as such (as in English); if capitalization only happens when it's a start
+    // of sentense then these should be in lower case.
     'full months'   => array('January', 'February', 'March', 'April', 'May',
                              'June', 'July', 'August', 'September', 'October',
                              'November', 'December'),
@@ -791,10 +794,10 @@ DateFmt::$languages = array(
     // 12s, 3 min, 2 years, ...
     // number string: array('stem', 0, 1, 2-4, 5-20)
     'AGO s' => array(' second', 's', '', 's', 's'), 'AGO short s' => 's',
-    'AGO i' => array(' minute', 's', '', 's', 's'), 'AGO short i' => 'min',
+    'AGO i' => array(' minute', 's', '', 's', 's'), 'AGO short i' => 'mi',
     'AGO h' => array(' hour', 's', '', 's', 's'),   'AGO short h' => 'h',
     'AGO d' => array(' day', 's', '', 's', 's'),    'AGO short d' => 'd',
-    'AGO o' => array(' month', 's', '', 's', 's'),  'AGO short o' => 'mon',
+    'AGO o' => array(' month', 's', '', 's', 's'),  'AGO short o' => 'mo',
     'AGO w' => array(' week', 's', '', 's', 's'),   'AGO short w' => 'w',
     'AGO y' => array(' year', 's', '', 's', 's'),   'AGO short y' => 'y',
 
@@ -827,20 +830,20 @@ DateFmt::$languages = array(
     'time without seconds' => 'h:m', 'time with seconds' => 'h:m:s',
     'date without year' => 'd.m', 'date with year' => 'd.m.y',
 
-    'full months'   => array('Январь', 'Февраль', 'Март', 'Апрель', 'Май',
-                             'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь',
-                             'Ноябрь', 'Декабрь'),
-    'full months-at'=> array('Января', 'Февраля', 'Марта', 'Апреля', 'Мая',
-                             'Июня', 'Июля', 'Августа', 'Сентября', 'Октября',
-                             'Ноября', 'Декабря'),
-    'short months'  => array('Янд', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл',
-                             'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'),
+    'full months'   => array('январь', 'февраль', 'март', 'апрель', 'май',
+                             'июнь', 'июль', 'август', 'сентябрь', 'октябрь',
+                             'ноябрь', 'декабрь'),
+    'full months-at'=> array('января', 'февраля', 'марта', 'апреля', 'мая',
+                             'июня', 'июля', 'августа', 'сентября', 'октября',
+                             'ноября', 'декабря'),
+    'short months'  => array('янд', 'фев', 'мар', 'апр', 'май', 'июн', 'июл',
+                             'авг', 'сен', 'окт', 'ноя', 'дек'),
 
-    'full days'     => array('Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг',
-                             'Пятница', 'Суббота'),
-    'full days-at'  => array('Воскресенье', 'Понедельник', 'Вторник', 'Среду', 'Четверг',
-                             'Пятницу', 'Субботу'),
-    'short days'    => array('Вос', 'Пон', 'Вто', 'Сре', 'Чет', 'Пят', 'Суб'),
+    'full days'     => array('воскресенье', 'понедельник', 'вторник', 'среда', 'четверг',
+                             'пятница', 'суббота'),
+    'full days-at'  => array('воскресенье', 'понедельник', 'вторник', 'среду', 'четверг',
+                             'пятницу', 'субботу'),
+    'short days'    => array('вос', 'пон', 'вто', 'сре', 'чет', 'пят', 'суб'),
 
     'full year' => 'год',
     'full year-at' => 'года',

@@ -1,7 +1,10 @@
 <?php
 /*
-  This is a standalone (except for mb_string) class to ultimately format dates & times.
-  by Proger_XP | http://proger.i-forge.net/DateFmt/cWq | $Rev: 84 $
+  This is a standalone class to ultimately format dates & times.
+  Requires mb_string. PHP 5+.
+
+  by Proger_XP      | http://proger.i-forge.net/DateFmt/cWq
+  in public domain  | https://github.com/ProgerXP/DateFmt
 */
 
 class DateError extends Exception {
@@ -18,7 +21,7 @@ class DateError extends Exception {
     function __construct() {
       $this->pcreErrorCode = preg_last_error();
       parent::__construct('PCRE error; preg_last_error() returned '.$this->pcreErrorCode.
-                          '. Check the encoding of your format string - it must be UTF-8.');
+                          '. Check the encoding of your format string - must be UTF-8.');
     }
   }
 
@@ -34,18 +37,41 @@ class DateError extends Exception {
   class EDateParse extends DateError { }
 
 class DateFmt {
-  static $selfTests;  // debug; use RunSelfTests(); is populated at the end of this file.
-  static $languages;  // use LoadLangauge(); is populated at the end of this file.
-  static $defaultLang = 'en';
-  // 'w' is special and its format is array($minInterval, $maxValueForFAR).
-  // e.g. array(7, 4) is >= 7 days after 'd' and 4 weeks to trigger IF-FAR[]. Must go
-  // before the "physically" existing date component (e.g. "w"eeks before "d"ays).
-  static $agoChars = array('s' => 60, 'i' => 60, 'h' => 24, 'w' => array(7, 4), 'd' => 30,
-                           'o' => 12, 'y' => false);
+  // Debug purpose only. See RunSelfTests(). Is populated at the end of this file.
+  static $selfTests;
 
-  public $date, $now;
+  // See LoadLangauge(). Is populated at the end of this file.
+  static $languages;
+
+  // Key in self::$languages. Used to load language into new DateFmt instances.
+  static $defaultLang = 'en';
+
+  // List of characters used in various parts, most notably AGO[] and IF-FAR[].
+  // 'w' is special and its format is array($minInterval, $maxValueForFAR) -
+  // so array(7, 4) is >= 7 days after 'd' and 4 weeks to trigger IF-FAR[].
+  // Must go before the "physically" existing date component - "d"ays.
+  static $agoChars = array('s' => 60, 'i' => 60, 'h' => 24, 'w' => array(7, 4),
+                           'd' => 30, 'o' => 12, 'y' => false);
+
+  // Timestamp being formatted by FOrmatAs().
+  public $date;
+
+  // Timestamp relative to which date distances (AGO[], etc.) is calculated.
+  public $now;
+
+  // Currently loaded language strings. Use LoadLanguage() to populate.
   public $strings;
 
+  /***
+    Public API
+   ***/
+
+  // Formats the date taking care of instantinating DateFmt and fixing mbstring.
+  // DateFmt->$now defaults to time(). $date defaults to time(). $language
+  // defaults to self::$defaultLang.
+  //
+  //? Format('AGO[*]', time() - 3600, 'ru')
+  //    //=> '1 hour ago'
   static function Format($str, $date = null, $language = null) {
     $prevEnc = mb_internal_encoding();
     mb_internal_encoding('UTF-8');
@@ -63,64 +89,48 @@ class DateFmt {
     }
   }
 
+  // $date - timestamp to be formatted with later call to FormatAs().
   function __construct($date = null) {
     $this->date = is_numeric($date) ? $date : time();
     $this->now = time();
     $this->LoadLanguage(self::$defaultLang);
   }
 
-    function LoadLanguage($iso2OrArray) {
-      if (!is_array($iso2OrArray)) {
-        $lang = &self::$languages[ strtolower($iso2OrArray) ];
-        if (!$lang) { throw new EDateLanguage($iso2OrArray); }
-        $iso2OrArray = $lang;
-      }
-
-      $this->strings = $iso2OrArray + self::$languages['en'];
-    }
-
-  function FmtStr($name, $args) {
-    return strtr($this->strings[$name], $args);
-  }
-
-  function FmtNum($number, $langName) {
-    $inflections = $this->strings[$langName];
-    if (is_array($inflections)) {
-      $stem = array_shift($inflections);
-      return self::FmtNumUsing($stem, $inflections,
-                               (bool) $this->strings['number rolls'], $number);
+  // Allows invokation of any PascalCase() method as camelCase().
+  //
+  //? $this->formatAs('h#m')
+  //    // identical to $this->FormatAs('h#m')
+  function __call($method, $arguments) {
+    $ucMethod = ucfirst($method);
+    if (method_exists($this, $ucMethod)) {
+      return call_user_func_array($this, $ucMethod);
     } else {
-      return $inflections;
+      throw new BadMethodCallException(get_class($this)."->$method() is undefined.");
     }
   }
 
-    static function FmtNumUsing($stem, $inflections, $numberRolls, $number) {
-      $inflection = '';
-
-      if ($number == 0) {
-        $inflection = $inflections[0];
-      } elseif ($number == 1) {
-        $inflection = $inflections[1];
-      } elseif ($number <= 4) {
-        $inflection = $inflections[2];
-      } elseif ($number <= 20 or !$numberRolls) {
-        $inflection = $inflections[3];
-      } else {  // 21 and over
-        return self::FmtNumUsing( $stem, $inflections, $numberRolls, substr($number, 1) );
-      }
-
-      return $stem.$inflection;
+  // Sets language string for this instance.
+  //
+  //? LoadLanguage('ru')
+  //    // by ISO 2-chars code (must be defined in self::$languages)
+  //? LoadLanguage(array(...))
+  //    // by your own language strings (missing keys are taken from English)
+  function LoadLanguage($iso2OrArray) {
+    if (!is_array($iso2OrArray)) {
+      $lang = &self::$languages[ strtolower($iso2OrArray) ];
+      if (!$lang) { throw new EDateLanguage($iso2OrArray); }
+      $iso2OrArray = $lang;
     }
 
-  static function FixFloat($float) {
-    // PHP's floating point model can make evenly divisible numbers look like 0.999 -> 0.
-    if ($float - (int) $float >= 0.9999) {
-      return ceil($float);
-    } else {
-      return $float;
-    }
+    $this->strings = $iso2OrArray + self::$languages['en'];
+    return $this;
   }
 
+  // Returns formatted version of $this->date relative to $this->now.
+  //
+  //? FormatAs('AGO[*]IF-FAR[d#my]')
+  //    //=> 'half a month ago'
+  //    //=> '16.02.2014'
   function FormatAs($str) {
     $regExp = '~
                 (?:
@@ -143,52 +153,103 @@ class DateFmt {
       $result = '';
       $prevPos = 0;
 
-        foreach ($parts as $part) {
-          // Note: mb_*() won't do here since preg_match* seem to capture
-          //       ASCII offsets even in /u mode.
-          $prev = substr($str, $prevPos, $part[0][1] - $prevPos);
-          $prevPos = $part[0][1] + strlen( $part[0][0] );
+      foreach ($parts as $part) {
+        // mb_*() won't work here since preg_match* seem to capture
+        // absolute (ASCII) offsets even in /u mode.
+        $prev = substr($str, $prevPos, $part[0][1] - $prevPos);
+        $prevPos = $part[0][1] + strlen( $part[0][0] );
 
-          foreach ($part as &$piece) { $piece = $piece[0]; }
-          $result .= $this->FormatNormal($prev) . $this->ParsePart($part);
-        }
+        foreach ($part as &$piece) { $piece = $piece[0]; }
+        $result .= $this->FormatNormal($prev).$this->ParsePart($part);
+      }
 
-      return $result. $this->FormatNormal( substr($str, $prevPos) );
+      return $result.$this->FormatNormal( substr($str, $prevPos) );
     } else {
       EDateLastPCRE::ThrowIfPcreFailed();
       return $this->FormatNormal($str);
     }
   }
 
-    function ParsePart(&$part) {
-      @list($reinsert, $isAgo, $isAgoShort, $isAgoAt, $isAt,
-            $format, $ifRange, $ifFormat, $trailAtOrWord) = $part;
+  /***
+    Internal Utilities
+   ***/
 
-        $trailAt = $trailAtOrWord === 'AT';
-        $noAgoWord = $trailAtOrWord === '_';
+  function FmtStr($name, $args) {
+    return strtr($this->strings[$name], $args);
+  }
 
-        if ($trailAt) { $isAt = $isAgoAt = true; }
+  function FmtNum($number, $langName) {
+    $inflections = $this->strings[$langName];
+    if (is_array($inflections)) {
+      $stem = array_shift($inflections);
+      return self::FmtNumUsing($stem, $inflections,
+                               (bool) $this->strings['number rolls'], $number);
+    } else {
+      return $inflections;
+    }
+  }
 
-      if ($isAgo) {
-        $result = $this->FormatAGO($format, array('isShort' => (bool) $isAgoShort,
-                                                  'wordForm' => $isAgoAt ? 'at' : '',
-                                                  'ifFAR' => $ifRange === '-FAR',
-                                                  'ifRange' => substr($ifRange, 1),
-                                                  'ifFormat' => $ifFormat,
-                                                  'noAgoWord' => $noAgoWord));
-      } elseif ($isAt) {
-        if ($ifRange) {
-          throw new EDateParse('IF[] cannot be used with AT[] alone, only with AGO[] or AGO[]IF[]AT.');
-        }
+  static function FmtNumUsing($stem, $inflections, $numberRolls, $number) {
+    $inflection = '';
 
-        $result = $this->FormatNormal($format, 'at');
-      } else {
-        return $this->FormatNormal($reinsert);
+    if ($number == 0) {
+      $inflection = $inflections[0];
+    } elseif ($number == 1) {
+      $inflection = $inflections[1];
+    } elseif ($number <= 4) {
+      $inflection = $inflections[2];
+    } elseif ($number <= 20 or !$numberRolls) {
+      $inflection = $inflections[3];
+    } else {  // 21 and over.
+      return self::FmtNumUsing($stem, $inflections, $numberRolls, substr($number, 1));
+    }
+
+    return $stem.$inflection;
+  }
+
+  static function FixFloat($float) {
+    // PHP's floating point model makes evenly divisible numbers look like 0.999 -> 0.
+    if ($float - (int) $float >= 0.9999) {
+      return ceil($float);
+    } else {
+      return $float;
+    }
+  }
+
+  /***
+    Internal Format Methods
+   ***/
+
+  function ParsePart(&$part) {
+    @list($reinsert, $isAgo, $isAgoShort, $isAgoAt, $isAt,
+          $format, $ifRange, $ifFormat, $trailAtOrWord) = $part;
+
+    $trailAt = $trailAtOrWord === 'AT';
+    $noAgoWord = $trailAtOrWord === '_';
+
+    if ($trailAt) { $isAt = $isAgoAt = true; }
+
+    if ($isAgo) {
+      $result = $this->FormatAGO($format, array('isShort' => (bool) $isAgoShort,
+                                                'wordForm' => $isAgoAt ? 'at' : '',
+                                                'ifFAR' => $ifRange === '-FAR',
+                                                'ifRange' => substr($ifRange, 1),
+                                                'ifFormat' => $ifFormat,
+                                                'noAgoWord' => $noAgoWord));
+    } elseif ($isAt) {
+      if ($ifRange) {
+        throw new EDateParse('IF[] cannot be used with AT[] alone, only with'.
+                             ' AGO[] or AGO[]IF[]AT.');
       }
 
-      $trailAt and $result .= $this->strings['at-time'];
-      return $result;
+      $result = $this->FormatNormal($format, 'at');
+    } else {
+      return $this->FormatNormal($reinsert);
     }
+
+    $trailAt and $result .= $this->strings['at-time'];
+    return $result;
+  }
 
   protected $normalFormatting;
   function FormatNormal($format, $wordForm = '') {
@@ -206,58 +267,60 @@ class DateFmt {
     return preg_replace_callback($regExp, array($this, 'NormalFormatter'), $format);
   }
 
-    function NormalFormatter($match) {
-      @list(, $date, $dateWithYear, $timeAmPM, $time, $timeWithSeconds, $intFormat,
-            $intLeadZero, $amPM, $wordFormat, $wordLength) = $match;
+  function NormalFormatter($match) {
+    @list(, $date, $dateWithYear, $timeAmPM, $time, $timeWithSeconds, $intFormat,
+          $intLeadZero, $amPM, $wordFormat, $wordLength) = $match;
 
-      if ($date) {
-        return $this->FormatDate($date === '##', (bool) $dateWithYear);
-      } elseif ($time) {
-        return $this->FormatTime($time === '##', (bool) $timeWithSeconds);
-      } elseif ($intFormat) {
-        $intLeadZero = $intLeadZero === '##';
+    if ($date) {
+      return $this->FormatDate($date === '##', (bool) $dateWithYear);
+    } elseif ($time) {
+      return $this->FormatTime($time === '##', (bool) $timeWithSeconds);
+    } elseif ($intFormat) {
+      $intLeadZero = $intLeadZero === '##';
 
-        if ($intFormat !== 'h' and $intFormat !== 'H') {
-          $intFormat = strtolower($intFormat);
-          if ($intFormat === 'y' and $intLeadZero) { $intFormat = 'Y'; }
-          $intFormat === 'm' and $intFormat = 'i';
-          $intFormat === 'mo' and $intFormat = 'm';
-        }
-
-        $int = date($intFormat, $this->date);
-        $int = ltrim($int, '0');
-          $int === '' and $int = '0';
-        $intLeadZero and $int = str_pad($int, 2, '0', STR_PAD_LEFT);
-
-        return $int;
-      } elseif ($amPM) {
-        return $amPM[0] === 'a' ? mb_strtolower($this->amPM()) : $this->amPM();
-      } elseif ($wordFormat) {
-        $words = array('d' => array('days', date('w', $this->date)),
-                       'm' => array('months', date('n', $this->date) - 1),
-                       'y' => array('year', null));
-
-        $lowcase = isset($words[ $wordFormat[0] ]);
-          $lowcase or $wordFormat = strtolower($wordFormat);
-        list($key, $index) = $words[ $wordFormat[0] ];
-
-          $len = $wordLength === '__' ? 'full' : 'short';
-          $form = $this->normalFormatting['wordForm'];  // e.g. "at".
-
-          $key = "$len $key-$form";
-          isset( $this->strings[$key] ) or $key = strtok($key, '-');
-
-        $word = $this->strings[$key];
-        isset($index) and $word = $word[$index];
-
-        $lowcase or $word = mb_convert_case($word, MB_CASE_TITLE);
-        return $word;
+      if ($intFormat !== 'h' and $intFormat !== 'H') {
+        $intFormat = strtolower($intFormat);
+        if ($intFormat === 'y' and $intLeadZero) { $intFormat = 'Y'; }
+        $intFormat === 'm' and $intFormat = 'i';
+        $intFormat === 'mo' and $intFormat = 'm';
       }
 
-      throw new DateError('Nothing matched in NormalFormatter()!');
+      $int = date($intFormat, $this->date);
+      $int = ltrim($int, '0');
+        $int === '' and $int = '0';
+      $intLeadZero and $int = str_pad($int, 2, '0', STR_PAD_LEFT);
+
+      return $int;
+    } elseif ($amPM) {
+      return $amPM[0] === 'a' ? mb_strtolower($this->amPM()) : $this->amPM();
+    } elseif ($wordFormat) {
+      $words = array('d' => array('days', date('w', $this->date)),
+                     'm' => array('months', date('n', $this->date) - 1),
+                     'y' => array('year', null));
+
+      $lowcase = isset($words[ $wordFormat[0] ]);
+        $lowcase or $wordFormat = strtolower($wordFormat);
+      list($key, $index) = $words[ $wordFormat[0] ];
+
+        $len = $wordLength === '__' ? 'full' : 'short';
+        $form = $this->normalFormatting['wordForm'];  // e.g. "at".
+
+        $key = "$len $key-$form";
+        isset( $this->strings[$key] ) or $key = strtok($key, '-');
+
+      $word = $this->strings[$key];
+      isset($index) and $word = $word[$index];
+
+      $lowcase or $word = mb_convert_case($word, MB_CASE_TITLE);
+      return $word;
     }
 
-  function amPM() { return $this->strings[ date('A', $this->date) ]; }
+    throw new DateError('Nothing matched in NormalFormatter()!');
+  }
+
+  function amPM() {
+    return $this->strings[ date('A', $this->date) ];
+  }
 
   function FormatDate($dayLeadZero = false, $withYear = true) {
     $fmt = array();
@@ -272,23 +335,23 @@ class DateFmt {
     }
   }
 
-    function FormatTime($hoursLeadZero = false, $withSeconds = false) {
-      $fmt = array('%' => '');
+  function FormatTime($hoursLeadZero = false, $withSeconds = false) {
+    $fmt = array('%' => '');
 
-        $fmt['m'] = date('i', $this->date);
-        $this->strings['12 hour time'] and $fmt['%'] = $this->amPM();
+    $fmt['m'] = date('i', $this->date);
+    $this->strings['12 hour time'] and $fmt['%'] = $this->amPM();
 
-      $mod = $hoursLeadZero ? 'h' : 'g';
-      $this->strings['12 hour time'] or $mod = strtoupper($mod);
-      $fmt['h'] = date($mod, $this->date);
+    $mod = $hoursLeadZero ? 'h' : 'g';
+    $this->strings['12 hour time'] or $mod = strtoupper($mod);
+    $fmt['h'] = date($mod, $this->date);
 
-      if ($withSeconds) {
-        $fmt['s'] = date('s', $this->date);
-        return $this->FmtStr('time with seconds', $fmt);
-      } else {
-        return $this->FmtStr('time without seconds', $fmt);
-      }
+    if ($withSeconds) {
+      $fmt['s'] = date('s', $this->date);
+      return $this->FmtStr('time with seconds', $fmt);
+    } else {
+      return $this->FmtStr('time without seconds', $fmt);
     }
+  }
 
   // $options: isShort, wordForm, ifFAR, ifRange, ifFormat.
   function FormatAGO($format, $options = array()) {
@@ -313,155 +376,168 @@ class DateFmt {
       }
     }
 
-      $distance = $this->now - $this->date;
-      $isInFuture = $distance < 0;
-      $distance = abs($distance);
+    $distance = $this->now - $this->date;
+    $isInFuture = $distance < 0;
+    $distance = abs($distance);
 
     $originalOrder = $chars;
     $chars = array_intersect_key(self::$agoChars, array_flip($chars));
 
     $formattedIF = $this->FormatIF($chars, $distance, $options);
     if ($formattedIF === null) {
-      $result = $this->FormatExactAgoLimitedTo($chars, $distance, compact('originalOrder') + $options);
+      $options = compact('originalOrder') + $options;
+      $result = $this->FormatExactAgoLimitedTo($chars, $distance, $options);
 
       if (!$options['noAgoWord']) {
-        $result = $this->FmtStr($isInFuture ? 'in future' : 'ago', array('%' => $result));
+        return $this->FmtStr($isInFuture ? 'in future' : 'ago', array('%' => $result));
+      } else {
+        return $result;
       }
-      return $result;
     } else {
       return $formattedIF;
     }
   }
 
-    // $options: isShort, wordForm, originalOrder.
-    function FormatExactAgoLimitedTo($chars, $distance, $options) {
-      $components = $this->SplitDistanceIntoComponents($distance);
+  /***
+    AGO[e.x.a.c.t] Formatting
+   ***/
 
-        foreach ($components as $i => $char) {
-          if (!isset( $chars[$char[0]] )) {
-            unset($components[$i]);
-          }
-        }
-        $components = array_values($components);
+  // $options: isShort, wordForm, originalOrder.
+  function FormatExactAgoLimitedTo($chars, $distance, $options) {
+    $components = $this->SplitDistanceIntoComponents($distance);
 
-      $this->ConvCompToSolidDistance($components);
-      $components = $this->DistanceComponentsToNumWords($components, $options['isShort'], $options['wordForm']);
-
-      // zeros are hidden unless all fields were 0s - then only the smallest one is output.
-      $nonZeroComps = array_filter($components, array(__CLASS__, 'IsNonZeroDistance'));
-      if (empty($nonZeroComps)) {
-        while ($char = array_pop($options['originalOrder']) and !isset($components[$char])) { }
-        $options['originalOrder'] = array($char);
-      } else {
-        $components = $nonZeroComps;
+    foreach ($components as $i => $char) {
+      if (!isset( $chars[$char[0]] )) {
+        unset($components[$i]);
       }
+    }
+    $components = array_values($components);
 
-      return $this->JoinDistanceComponentsInOrder($options['originalOrder'], $components);
+    $this->ConvCompToSolidDistance($components);
+    $components = $this->DistanceComponentsToNumWords($components, $options['isShort'], $options['wordForm']);
+
+    // Zeros are hidden unless all fields were zeos - then the smallest one is output.
+    $nonZeroComps = array_filter($components, array(__CLASS__, 'IsNonZeroDistance'));
+    if (empty($nonZeroComps)) {
+      while ($char = array_pop($options['originalOrder']) and
+             !isset($components[$char])) { }
+      $options['originalOrder'] = array($char);
+    } else {
+      $components = $nonZeroComps;
     }
 
-      function SplitDistanceIntoComponents($distance) {
-        $comps = array();
+    return $this->JoinDistanceComponentsInOrder($options['originalOrder'], $components);
+  }
 
-        $remainder = $distance;
-        foreach (self::$agoChars as $char => $length) {
-          if (!$length) {
+  function SplitDistanceIntoComponents($distance) {
+    $comps = array();
+
+    $remainder = $distance;
+    foreach (self::$agoChars as $char => $length) {
+      if (!$length) {
+        break;
+      } elseif (is_array($length)) {
+        $dist = $remainder / $length[0];
+      } else {
+        $dist = $remainder;
+        $remainder /= $length;
+      }
+
+      $comps[] = array($char, (int) $this->FixFloat($dist));
+    }
+
+    return $comps;
+  }
+
+  // On input, e.g. array( array('s', 176400), array('i', 2940), array('d', 2) ),
+  // all distance components (176400, 2940 and 2) represent the same distance (2 days
+  // and 1 hour) - only in different units. This function converts them so they become
+  // array( array('s', 0), array('i', 60), array('d', 2) ) - when summed up together
+  // they represent the original distance.
+  function ConvCompToSolidDistance(&$comps) {
+    foreach ($comps as $i => &$comp) {
+      list($char, $dist) = $comp;
+
+      $next = @$comps[$i + 1];
+      if (isset($next)) {
+        $toSubtract = $pseudoChar = null;
+
+        foreach (self::$agoChars as $otherChar => $otherLength) {
+          if ($otherChar === $next[0]) {
             break;
-          } elseif (is_array($length)) {
-            $dist = $remainder / $length[0];
-          } else {
-            $dist = $remainder;
-            $remainder /= $length;
+          } elseif ($otherChar === $char) {
+            $toSubtract = $next[1];
           }
 
-          $comps[] = array($char, (int) $this->FixFloat($dist));
-        }
-
-        return $comps;
-      }
-
-      // On input, e.g. array( array('s', 176400), array('i', 2940), array('d', 2) ),
-      // all distance components (176400, 2940 and 2) reflect the same distance (2 days and 1 hour)
-      // - only in different units. This function converts them so they become
-      // array( array('s', 0), array('i', 60), array('d', 2) ) - when summed together
-      // they represent for original distance.
-      function ConvCompToSolidDistance(&$comps) {
-        foreach ($comps as $i => &$comp) {
-          list($char, $dist) = $comp;
-
-          $next = @$comps[$i + 1];
-          if (isset($next)) {
-            $toSubtract = $pseudoChar = null;
-
-            foreach (self::$agoChars as $otherChar => $otherLength) {
-              if ($otherChar === $next[0]) {
-                break;
-              } elseif ($otherChar === $char) {
-                $toSubtract = $next[1];
-              }
-
-              if ($toSubtract !== null) {
-                if (is_array($otherLength)) {
-                  $pseudoChar = $otherLength[1];
-                } elseif ($pseudoChar) {
-                  $toSubtract *= $pseudoChar;
-                  $pseudoChar = null;
-                } else {
-                  $toSubtract *= $otherLength;
-                }
-              }
-            }
-
-            $comp[1] -= $toSubtract;
-          }
-        }
-      }
-
-      function DistanceComponentsToNumWords($comps, $isShort, $wordForm) {
-        $numWords = array();
-
-        foreach ($comps as $comp) {
-          list($char, $distance) = $comp;
-
-          $key = 'AGO ';
-
-            if (empty( $this->strings['force AT-form for AGO'] )) {
-              $wordForm = $wordForm;
+          if ($toSubtract !== null) {
+            if (is_array($otherLength)) {
+              $pseudoChar = $otherLength[1];
+            } elseif ($pseudoChar) {
+              $toSubtract *= $pseudoChar;
+              $pseudoChar = null;
             } else {
-              $wordForm = 'at';
+              $toSubtract *= $otherLength;
             }
-            $key .= ($isShort ? 'short ' : '')."$char-$wordForm";
-
-          isset( $this->strings[$key] ) or $key = strtok($key, '-');
-
-          $distance = self::FixFloat($distance);
-          $intDistance = $distance = (int) $distance;
-
-          $numWord = $this->FmtNum($distance, $key);
-          $numWord = array('n' => $distance, '%' => $numWord, 'dist' => $intDistance);
-
-          $numWords[$char] = $numWord;
-        }
-
-        return $numWords;
-      }
-
-      static function IsNonZeroDistance($comp) { return $comp['dist'] != 0; }
-
-      function JoinDistanceComponentsInOrder($chars, $comps) {
-        $result = '';
-
-        // reverse because result is formed as "$new $prev", see the language strings.
-        foreach (array_reverse($chars) as $char) {
-          $numWord = &$comps[$char];
-          if ($numWord) {
-            $numWord['p'] = $result;
-            unset($numWord['dist']);
-            $result = $this->FmtStr($result === '' ? 'number word' : 'exact', $numWord);
           }
         }
 
-        return $result;
+        $comp[1] -= $toSubtract;
       }
+    }
+  }
+
+  function DistanceComponentsToNumWords($comps, $isShort, $wordForm) {
+    $numWords = array();
+
+    foreach ($comps as $comp) {
+      list($char, $distance) = $comp;
+
+      $key = 'AGO ';
+
+      if (empty( $this->strings['force AT-form for AGO'] )) {
+        $wordForm = $wordForm;
+      } else {
+        $wordForm = 'at';
+      }
+      $key .= ($isShort ? 'short ' : '')."$char-$wordForm";
+
+      isset( $this->strings[$key] ) or $key = strtok($key, '-');
+
+      $distance = self::FixFloat($distance);
+      $intDistance = $distance = (int) $distance;
+
+      $numWord = $this->FmtNum($distance, $key);
+      $numWord = array('n' => $distance, '%' => $numWord, 'dist' => $intDistance);
+
+      $numWords[$char] = $numWord;
+    }
+
+    return $numWords;
+  }
+
+  static function IsNonZeroDistance($comp) {
+    return $comp['dist'] != 0;
+  }
+
+  function JoinDistanceComponentsInOrder($chars, $comps) {
+    $result = '';
+
+    // Reverse because result is formed as "$new $prev", see the language strings.
+    foreach (array_reverse($chars) as $char) {
+      $numWord = &$comps[$char];
+      if ($numWord) {
+        $numWord['p'] = $result;
+        unset($numWord['dist']);
+        $result = $this->FmtStr($result === '' ? 'number word' : 'exact', $numWord);
+      }
+    }
+
+    return $result;
+  }
+
+  /***
+    AGO[fuzzy] Formatting
+   ***/
 
   // AGO[smh]
   // $options: isShort, wordForm, noAgoWord, ifFAR, ifRange, ifFormat.
@@ -483,247 +559,260 @@ class DateFmt {
     }
   }
 
-    // $options: isShort, wordForm, isInFuture.
-    function AgoStr($char, $distance, $options) {
-      extract($options, EXTR_SKIP);
+  // $options: isShort, wordForm, isInFuture.
+  function AgoStr($char, $distance, $options) {
+    extract($options, EXTR_SKIP);
 
-      $key = 'AGO ';
+    $key = 'AGO ';
 
-        if ($isInFuture and $char[0] === 'b') { $key .= 'future '; }
-        $isShort and $key .= 'short ';
+    if ($isInFuture and $char[0] === 'b') { $key .= 'future '; }
+    $isShort and $key .= 'short ';
 
-        empty( $this->strings['force AT-form for AGO'] ) or $wordForm = 'at';
-        $key .= "$char-$wordForm";
+    empty( $this->strings['force AT-form for AGO'] ) or $wordForm = 'at';
+    $key .= "$char-$wordForm";
 
-      isset( $this->strings[$key] ) or $key = strtok($key, '-');
+    isset( $this->strings[$key] ) or $key = strtok($key, '-');
 
-      if ($char[0] === 'b') {
-        return $this->strings[$key];
+    if ($char[0] === 'b') {
+      return $this->strings[$key];
+    } else {
+      $result = null;
+
+      if (!$isShort) {
+        if ($distance < 1 and $distance >= 0.45 and
+                  isset( $this->strings['half '.$char] )) {
+          $result = $this->strings['half '.$char];
+        } elseif ($distance >= 1.45 and $distance < 2 and
+                  isset( $this->strings['1.5 '.$char] )) {
+          $result = $this->strings['1.5 '.$char];
+        }
+      }
+
+      if ($result === null) {
+        $distance = $this->FixFloat($distance);
+        // sprintf() is consistent: %1.0f on 1.5 == 2 (rounds up),
+        // on 2.5 == 2 (and later - rounds down).
+        if ($distance >= 0.1 and $distance < 1) {
+          $distance = round($distance, 1);
+        } else {
+          $distance = floor($distance);
+        }
+        $distance = strtr("$distance", '.', $this->strings['float delim']);
+
+        $fmt = array('n' => $distance, '%' => $this->FmtNum($distance, $key));
+        $result = $this->FmtStr('number word', $fmt);
+      }
+
+      if (!$noAgoWord) {
+        return $this->FmtStr($isInFuture ? 'in future' : 'ago', array('%' => $result));
       } else {
-        $result = null;
-
-        if (!$isShort) {
-          if ($distance < 1 and $distance >= 0.45 and
-                    isset( $this->strings['half '.$char] )) {
-            $result = $this->strings['half '.$char];
-          } elseif ($distance >= 1.45 and $distance < 2 and
-                    isset( $this->strings['1.5 '.$char] )) {
-            $result = $this->strings['1.5 '.$char];
-          }
-        }
-
-          if ($result === null) {
-            $distance = $this->FixFloat($distance);
-
-              $prec = (($distance > 0.1 and $distance < 0.9) ? '1' : '0');
-              $distance = sprintf("%1.{$prec}f", $distance);
-              $distance = strtr($distance, '.', $this->strings['float delim']);
-
-            $fmt = array('n' => $distance, '%' => $this->FmtNum($distance, $key));
-            $result = $this->FmtStr('number word', $fmt);
-          }
-
-        if (!$noAgoWord) {
-          $result = $this->FmtStr($isInFuture ? 'in future' : 'ago', array('%' => $result));
-        }
         return $result;
       }
     }
+  }
 
-    function NormAgoFormat($format, $distance, &$useNearDays) {
-      $chars = $this->NormAgoFmtStr($format);
-      $chars = array_flip( str_split($chars) );
+  function NormAgoFormat($format, $distance, &$useNearDays) {
+    $chars = $this->NormAgoFmtStr($format);
+    $chars = array_flip( str_split($chars) );
 
-      if (isset( $chars['b'] )) {
-        $chars['d'] = true;
-        unset($chars['b']);
-        $useNearDays = $distance <= 3600 * 24 * 3;
+    if (isset( $chars['b'] )) {
+      $chars['d'] = true;
+      unset($chars['b']);
+      $useNearDays = $distance <= 3600 * 24 * 3;
+    } else {
+      $useNearDays = false;
+    }
+
+    $unkChars = array_diff_key($chars, self::$agoChars);
+    if ($unkChars) {
+      $s = count($unkChars) > 1 ? 's' : '';
+      throw new EDateParse( "Unknown AGO[$format] character$s: ".
+                           join(' ', array_keys($unkChars)) );
+    }
+
+    // Set order as in $agoChars.
+    $chars = array_intersect_key(self::$agoChars, $chars);
+
+    if (!$chars) {
+      throw new EDateParse("No format passed for AGO[$format].");
+    }
+
+    return $chars;
+  }
+
+  function NormAgoFmtStr($format) {
+    $chars = strtolower( trim($format) );
+
+    $shortcuts = array('t' => 'smh', '*' => join( array_keys(self::$agoChars) ));
+    $chars = strtr($chars, $shortcuts);
+    $chars = $this->DisambiguateAgoM($chars);
+
+    // Order of pseudochars: e.g. i-d means ihd, not ihwd while i-w means ihwd, not ihw.
+    $all = join($this->FixOrderOfPseudoCharsIn( array_keys(self::$agoChars) ));
+    while ($pos = strpos($chars, '-')) {
+      $rangeStart = $chars[$pos - 1];
+      $rangeEnd = $chars[$pos + 1];
+
+      if ($rangeEnd !== null) {
+        list($head, $range) = explode($rangeStart, $all, 2);
+        if (isset($range)) {
+          list($range, $tail) = explode($rangeEnd, $range, 2);
+          isset($tail) or $range = null;
+        }
+      }
+
+      if (isset($range)) {
+        $chars = substr($chars, 0, $pos).$range.substr($chars, $pos + 1);
+        $range = null;
       } else {
-        $useNearDays = false;
+        break;
       }
-
-      $unkChars = array_diff_key($chars, self::$agoChars);
-      if ($unkChars) {
-        $s = count($unkChars) > 1 ? 's' : '';
-        throw new EDateParse( "Unknown AGO[$format] character$s: ".
-                             join(' ', array_keys($unkChars)) );
-      }
-
-      $chars = array_intersect_key(self::$agoChars, $chars);  // set order as in $agoChars.
-
-        if (!$chars) {
-          throw new EDateParse("No format passed for AGO[$format].");
-        }
-
-      return $chars;
     }
 
-      function NormAgoFmtStr($format) {
-        $chars = strtolower( trim($format) );
+    return $chars;
+  }
 
-        $shortcuts = array( 't' => 'smh', '*' => join( array_keys(self::$agoChars) ) );
-        $chars = strtr($chars, $shortcuts);
-        $chars = $this->DisambiguateAgoM($chars);   // m(i)nute <=> (m) <=> m(o)nth
+  // m(i)nute <=> (m) <=> m(o)nth
+  function DisambiguateAgoM($chars) {
+    $parts = explode('m', $chars, 3);
 
-          // order of pseudochars: e.g. i-d means ihd, not ihwd while i-w means ihwd, not ihw.
-          $all = join($this->FixOrderOfPseudoCharsIn( array_keys(self::$agoChars) ));
-          while ($pos = strpos($chars, '-')) {
-            $rangeStart = $chars[$pos - 1];
-            $rangeEnd = $chars[$pos + 1];
-
-              if ($rangeEnd !== null) {
-                list($head, $range) = explode($rangeStart, $all, 2);
-                if (isset($range)) {
-                  list($range, $tail) = explode($rangeEnd, $range, 2);
-                  isset($tail) or $range = null;
-                }
-              }
-
-            if (isset($range)) {
-              $chars = substr($chars, 0, $pos) .$range. substr($chars, $pos + 1);
-              $range = null;
-            } else {
-              break;
-            }
-          }
-
-        return $chars;
+    if (isset($parts[2])) {         // ..m..m..
+      $parts[0] = strtr($parts[0], 'm', 'i').'i';
+      $parts[1] .= 'o';
+      $parts[2] = strtr($parts[2], 'm', 'o');
+    } elseif (isset($parts[1])) {  // ..m..
+      // bM dM wM   My
+      if (strpbrk(substr($parts[0], -1), 'bdw') !== false or
+          substr($parts[1], 0, 1) === 'y') {
+        $parts[0] .= 'o';
+      } else {
+        $parts[0] .= 'i';
       }
+    }
 
-        function DisambiguateAgoM($chars) {
-          $parts = explode('m', $chars, 3);
+    return join($parts);
+  }
 
-            if (isset($parts[2])) {         // ..m..m..
-              $parts[0] = strtr($parts[0], 'm', 'i').'i';
-              $parts[1] .= 'o';
-              $parts[2] = strtr($parts[2], 'm', 'o');
-            } elseif (isset($parts[1])) {  // ..m..
-              // bM dM wM   My
-              if (strpbrk(substr($parts[0], -1), 'bdw') !== false or
-                  substr($parts[1], 0, 1) === 'y') {
-                $parts[0] .= 'o';
-              } else {
-                $parts[0] .= 'i';
-              }
-            }
+  function FixOrderOfPseudoCharsIn($chars) {
+    $result = array();
 
-          return join($parts);
-        }
-
-        function FixOrderOfPseudoCharsIn($chars) {
-          $result = array();
-
+    $pseudoChar = null;
+    foreach ($chars as $char) {
+      if (is_array( self::$agoChars[$char] )) {
+        $pseudoChar = $char;
+      } else {
+        $result[] = $char;
+        if ($pseudoChar !== null) {
+          $result[] = $pseudoChar;
           $pseudoChar = null;
-          foreach ($chars as $char) {
-            if (is_array( self::$agoChars[$char] )) {
-              $pseudoChar = $char;
-            } else {
-              $result[] = $char;
-              if ($pseudoChar !== null) {
-                $result[] = $pseudoChar;
-                $pseudoChar = null;
-              }
-            }
-          }
-
-          return $result;
-        }
-
-    // $options: ifFAR, ifRange, ifFormat, wordForm.
-    function FormatIF($chars, $distance, $options) {
-      extract($options, EXTR_SKIP);
-
-      list($char, $distance) = $this->FindNearestLimitedTo($chars, $distance);
-      if (!empty($ifFAR)) {
-        $ifRange = self::$agoChars[$char];
-        is_array($ifRange) and $ifRange = $ifRange[1];
-      }
-
-      $allChars = array_keys($chars);
-      if (count($allChars) >= 2 and is_array(self::$agoChars[ $allChars[count($allChars) - 2] ])) {
-        $last = array_pop($allChars);
-        $pseudoChar = array_pop($allChars);
-        array_push($allChars, $last, $pseudoChar);
-      }
-
-      if (($ifRange = trim($ifRange)) !== '' and array_pop($allChars) === $char) {
-        if (!is_numeric($ifRange)) {
-          if (empty($ifFAR)) {
-            throw new EDateParse("IF>n[] where n must be numberic and non-zero ($ifRange given).");
-          } else {
-            throw new EDateParse("IF-FAR[] - FAR cannot be used with '$char'.");
-          }
-        } elseif ($distance > $ifRange) {
-          return $this->FormatNormal($ifFormat, $wordForm);
         }
       }
     }
 
-    function FindNearestLimitedTo($ranges, $distance) {
-      $nearChar = null;
-      $nearDist = $remainder = $distance;
-      $enableWeeks = false;
+    return $result;
+  }
 
-      foreach (self::$agoChars as $char => $length) {
-        if (!is_array($length)) {
-          $enableWeeks |= $char === 'd';
+  // $options: ifFAR, ifRange, ifFormat, wordForm.
+  function FormatIF($chars, $distance, $options) {
+    extract($options, EXTR_SKIP);
 
-          if (isset($ranges[$char])) {
-            $nearChar = $char;
-            $nearDist = $remainder;
-          }
+    list($char, $distance) = $this->FindNearestLimitedTo($chars, $distance);
+    if (!empty($ifFAR)) {
+      $ifRange = self::$agoChars[$char];
+      is_array($ifRange) and $ifRange = $ifRange[1];
+    }
 
-          if ($remainder >= $length and $length) {
-            $remainder /= $length;
-          } else {
-            break;
-          }
+    $allChars = array_keys($chars);
+    if (count($allChars) >= 2 and is_array(self::$agoChars[ $allChars[count($allChars) - 2] ])) {
+      $last = array_pop($allChars);
+      $pseudoChar = array_pop($allChars);
+      array_push($allChars, $last, $pseudoChar);
+    }
+
+    if (($ifRange = trim($ifRange)) !== '' and array_pop($allChars) === $char) {
+      if (!is_numeric($ifRange)) {
+        if (empty($ifFAR)) {
+          throw new EDateParse("IF>n[] where n must be numeric and non-zero".
+                               " ($ifRange given).");
+        } else {
+          throw new EDateParse("IF-FAR[] - FAR cannot be used with '$char'.");
         }
+      } elseif ($distance > $ifRange) {
+        return $this->FormatNormal($ifFormat, $wordForm);
       }
+    }
+  }
 
-      if ($nearChar) {
-        if ($enableWeeks and isset($ranges['w']) and !empty(self::$agoChars['w'])) {
-          $length = self::$agoChars['w'][0];
-          if (round($nearDist) >= $length) {
-            $nearChar = 'w';
-            $nearDist /= $length;
-          }
+  function FindNearestLimitedTo($ranges, $distance) {
+    $nearChar = null;
+    $nearDist = $remainder = $distance;
+
+    foreach (self::$agoChars as $char => $length) {
+      if (!is_array($length)) {
+        if (isset($ranges[$char])) {
+          $nearChar = $char;
+          $nearDist = $remainder;
         }
 
-        return array($nearChar, $nearDist);
-      } else {    // e.g. AGO[m] with distance of 3 sec.
-        $ranges = array_keys($ranges);
-        return $this->FindNearestTo($distance, $ranges[0]);
+        if ($remainder >= $length and $length) {
+          $remainder /= $length;
+        } else {
+          break;
+        }
       }
     }
 
-      function FindNearestTo($distance, $stopByChar = false) {
-        $nearChar = array_keys(self::$agoChars);
-        $nearChar = $nearChar[0];
-
-        foreach (self::$agoChars as $char => $length) {
-          if (($stopByChar !== false or $distance >= $length) and $length) {
-            $nearChar = $char;
-
-            if ($stopByChar === $char) {
-              is_array($length) and $distance /= $length[0];
-              break;
-            } else {
-              $distance /= $length;
-            }
-          } else {
-            break;
-          }
+    if ($nearChar) {
+      if ($nearChar === 'd' and isset($ranges['w']) and !empty(self::$agoChars['w'])) {
+        $length = self::$agoChars['w'][0];
+        if (self::FixFloat($nearDist) >= $length) {
+          $nearChar = 'w';
+          $nearDist /= $length;
         }
-
-        return array($nearChar, $distance);
       }
 
-  // returns array of ( false (success) | array('expected'=>, 'got'=>, 'format'=>, 'timestamp'=>, 'lang'=>) )
-  // you can use array_filter() to remove succeeded tests.
+      return array($nearChar, $nearDist);
+    } else {    // e.g. AGO[m] with distance of 3 sec.
+      $ranges = array_keys($ranges);
+      return $this->FindNearestTo($distance, $ranges[0]);
+    }
+  }
+
+  function FindNearestTo($distance, $stopByChar = false) {
+    $nearChar = array_keys(self::$agoChars);
+    $nearChar = $nearChar[0];
+
+    foreach (self::$agoChars as $char => $length) {
+      if (($stopByChar !== false or $distance >= $length) and $length) {
+        $nearChar = $char;
+
+        if ($stopByChar === $char) {
+          is_array($length) and $distance /= $length[0];
+          break;
+        } else {
+          $distance /= $length;
+        }
+      } else {
+        break;
+      }
+    }
+
+    return array($nearChar, $distance);
+  }
+
+  /***
+    Testing Methods (can be safely removed until the end of class definition)
+   ***/
+
+  // Returns array of:
+  // * false - test passed
+  // * array( 'expected'=>, 'got'=>, 'format'=>, 'timestamp'=>, 'lang'=> )
+  //
+  // You can use array_filter() to remove passed tests.
   static function RunSelfTests() {
     date_default_timezone_set('UTC');
     mb_internal_encoding('UTF-8');
+    set_time_limit(3600);
 
     $result = array();
 
@@ -755,9 +844,62 @@ class DateFmt {
       }
     }
 
+    //$result = array_merge($result, self::RunAgoTests(+1), self::RunAgoTests(-1));
     return $result;
   }
+
+  static function RunAgoTests($delta) {
+    return array_merge(self::RunAgoTestsOn($delta, 1, 60, 'second'),
+                       self::RunAgoTestsOn($delta, 60, 3600, 'minute'),
+                       self::RunAgoTestsOn($delta * 10, 3600, $end = 3600 * 24, 'hour'),
+                       self::RunAgoTestsOn($delta * 60, $end, $end *= 7, 'day'),
+                       self::RunAgoTestsOn($delta * 600, $end, $end *= 4, 'week'),
+                       self::RunAgoTestsOn($delta * 1800, $end = 3600 * 24 * 30,
+                                           $end *= 12, 'month'),
+                       self::RunAgoTestsOn($delta * 36000, $end, $end *= 10, 'year'));
+  }
+
+  static function RunAgoTestsOn($delta, $start, $end, $word) {
+    $result = array();
+
+    $datefmt = new self;
+    $datefmt->LoadLanguage('en');
+    $sign = $delta > 0 ? +1 : -1;
+
+    foreach ($datefmt->strings as $key => $value) {
+      if (substr($key, 0, 4) === '1.5 ' or substr($key, 0, 5) === 'half ') {
+        unset($datefmt->strings[$key]);
+      }
+    }
+
+    for ($dist = $start; $dist < $end and !isset($result[50]); $dist += $delta * $sign) {
+      $distw = (int) self::FixFloat($dist / $start);
+      $expected = "$distw $word".($distw == 1 ? '' : 's');
+      $expected = $delta > 0 ? "after $expected" : "$expected ago";
+      $datefmt->date = $datefmt->now + $sign * $dist;
+      $res = self::TestResult($datefmt, 'AGO[*]', $expected);
+      $res and $result[] = $res;
+    }
+
+    return $result;
+  }
+
+  static function TestResult($datefmt, $format, $expected) {
+    $got = $datefmt->FormatAs('AGO[*]');
+
+    if ($got === $expected) {
+      return false;
+    } else {
+      $timestamp = $datefmt->date;
+      $lang = array_search($datefmt->strings, DateFmt::$languages, true);
+      return compact('expected', 'got', 'format', 'timestamp', 'lang');
+    }
+  }
 }
+
+/***
+  Language Strings
+ ***/
 
 DateFmt::$languages = array(
   'en' => array(
@@ -775,7 +917,7 @@ DateFmt::$languages = array(
     // h##m & h##ms
     'time without seconds' => 'h:m %', 'time with seconds' => 'h:m:s %',
 
-    // month and day names should be capitalized if the language requires them to
+    // Month and day names should be capitalized if the language requires them to
     // be as such (as in English); if capitalization only happens when it's a start
     // of sentense then these should be in lower case.
     'full months'   => array('January', 'February', 'March', 'April', 'May',
@@ -792,7 +934,7 @@ DateFmt::$languages = array(
     'short year' => 'y.',
 
     // 12s, 3 min, 2 years, ...
-    // number string: array('stem', 0, 1, 2-4, 5-20)
+    // Number string: array('stem', 0, 1, 2-4, 5-20)
     'AGO s' => array(' second', 's', '', 's', 's'), 'AGO short s' => 's',
     'AGO i' => array(' minute', 's', '', 's', 's'), 'AGO short i' => 'mi',
     'AGO h' => array(' hour', 's', '', 's', 's'),   'AGO short h' => 'h',
@@ -801,7 +943,7 @@ DateFmt::$languages = array(
     'AGO w' => array(' week', 's', '', 's', 's'),   'AGO short w' => 'w',
     'AGO y' => array(' year', 's', '', 's', 's'),   'AGO short y' => 'y',
 
-    // number - distance in days.
+    // Number - distance in days.
     'AGO b0' => 'today', 'AGO short b0' => 'today',
     'AGO b1' => 'yesterday', 'AGO short b1' => 'yesterday',
     'AGO b2' => 'day before yesterday', 'AGO short b2' => 'day before',
@@ -822,7 +964,8 @@ DateFmt::$languages = array(
     'name' => 'Русский',
 
     'number rolls' => true,
-    'force AT-form for AGO' => true,  // было бы "1 минута спустя" вместо "1 минуту спустя".
+    // Было бы "1 минута спустя" вместо "1 минуту спустя".
+    'force AT-form for AGO' => true,
     '12 hour time' => false,
 
     'float delim' => ',', 'at-time' => ' в', 'AM' => 'дня', 'PM' => 'вечера',
@@ -849,7 +992,7 @@ DateFmt::$languages = array(
     'full year-at' => 'года',
     'short year' => 'г.',
 
-    // number string: array('stem', 0, 1, 2-4, 5-20)
+    // Number string: array('stem', 0, 1, 2-4, 5-20)
     'AGO s' => array(' секунд', '', 'а', 'ы', ''),     'AGO short s' => 'с.',
     'AGO i' => array(' минут', '', 'а', 'ы', ''),      'AGO short i' => 'мин',
     'AGO h' => array(' час', 'ов', '', 'а', 'ов'),     'AGO short h' => 'ч',
@@ -883,6 +1026,10 @@ DateFmt::$languages = array(
   )
 );
 
+/***
+  Test Data (can be safely removed until the end of file)
+ ***/
+
 DateFmt::$selfTests = array(
   'now' => 1309519239,
 
@@ -892,14 +1039,17 @@ DateFmt::$selfTests = array(
   array('AGO[h-w]', 1*24*3600, 'after 1 day'),
   array('AGO[h-w]', 6*24*3600, 'after 6 days'),
   array('AGO[h-w]', 7*24*3600, 'after 1 week'),
-  array('AGO[h-w]', 18*24*3600, 'after 3 weeks'),   // 3 (not 2) because 18 is closer to 21 than to 14 days.
+  // 2 (not 3 as 18 days is closer to 21 than to 14) since we are rounding down to
+  // keep the formatted string accurate to the actual date.
+  array('AGO[h-w]', 18*24*3600, 'after 2 weeks'),
   array('AGO[h-w]', 99*24*3600, 'after 14 weeks'),
   array('AGO[h-d]', 99*24*3600, 'after 99 days'),
   array('AGO[h-o]', 99*24*3600, 'after 3 months'),
 
   array('AGO[w]IF>2[on d##my]', 0.5*24*3600, 'after 0 weeks'),
   array('AGO[w]IF>2[on d##my]', 5*24*3600, 'after half a week'),
-  array('AGO[w]IF>2[on d##my]', 13*24*3600, 'after 2 weeks'),
+  // Rounding down.
+  array('AGO[w]IF>2[on d##my]', 13*24*3600, 'after 1 week'),
   array('AGO[w]IF>2[on d##my]', 14*24*3600, 'after 2 weeks'),
   array('AGO[w]IF>2[on d##my]', 15*24*3600, 'on 16/07/2011'),
   array('AGO[w]IF-FAR[on d##my]', 40*24*3600, 'on 10/08/2011'),
@@ -910,14 +1060,15 @@ DateFmt::$selfTests = array(
   array('AGO[h-w]IF-FAR[on d##my]', 35*24*3600, 'on 05/08/2011'),
   array('AGO[h-w]IF-FAR[on d##my]', 29*24*3600, 'on 30/07/2011'),
   array('AGO[h-w]IF-FAR[on d##my]', 28*24*3600, 'after 4 weeks'),
-  array('AGO[h-w]IF-FAR[on d##my]', 27*24*3600, 'after 4 weeks'),
+  // Rounding down.
+  array('AGO[h-w]IF-FAR[on d##my]', 27*24*3600, 'after 3 weeks'),
 
   array('AGO[i]',   30, 'after half a minute'),
   array('AGO[i]',   -59, 'half a minute ago'),
   array('AGO[i]',   -60, '1 minute ago'),
   array('AGO[w.o]', 1*30*24*3600 + 2*7*24*3600, 'after 2 weeks 1 month'),
   array('AGO[w.o]', 2*30*24*3600 + 2*7*24*3600, 'after 2 weeks 2 months'),
-  array('AGO[w]',   2*30*24*3600 + 2*7*24*3600, 'after 11 weeks'),
+  array('AGO[w]',   2*30*24*3600 /*4 w*/ + 2*7*24*3600, 'after 10 weeks'),
   array('AGO[w]',   3*24*3600, 'after 0.4 weeks'),
   array('AGO[w]',   5*24*3600, 'after half a week'),
 
@@ -932,6 +1083,7 @@ DateFmt::$selfTests = array(
 
   array('Now is D__, AT[d# of M__ y##] (h##ms).', 0, 'Now is Thursday, 1 of July 2011 (11:20:39 AM).'),
   array('ru', 'Сегодня D__, AT[d# M__ y##] (h##ms).', 0, 'Сегодня Пятница, 1 Июля 2011 (11:20:39).'),
+  array('ru', 'Сегодня d__, AT[d# M__ y##] (h##ms).', 0, 'Сегодня пятница, 1 Июля 2011 (11:20:39).'),
   array('Last commit was AGO[d.h].', -40*24*3600 - 14*3600 - 12, 'Last commit was 40 days 14 hours ago.'),
   array('ru', 'Last commit was AGO[d.h].', -40*24*3600 - 14*3600 - 12, 'Last commit was 40 дней 14 часов назад.'),
   array('It was on H#:m## A.M..', '1309519239', 'It was on 11:20 AM.'),
@@ -939,8 +1091,9 @@ DateFmt::$selfTests = array(
   array('This entry was posted AGO[*]AT D__, d# M__ y##.', -50*60 - 3, 'This entry was posted 50 minutes ago at Thursday, 1 July 2011.'),
   array('This document was created on d#my.', '1294790400', 'This document was created on 12/01/2011.'),
   array('ru', 'This document was created on d#my.', '1294790400', 'This document was created on 12.01.2011.'),
-  array('A diary post saying AT[d# m__ y##] in its top right corner.', '1355270400', 'A diary post saying 12 december 2012 in its top right corner.'),
+  array('A diary post saying AT[d# m__ y##] in its top right corner.', '1355270400', 'A diary post saying 12 December 2012 in its top right corner.'),
   array('ru', 'Записка с надписью AT[d# m__ y##] в правом верхнем углу.', '1355270400', 'Записка с надписью 12 декабря 2012 в правом верхнем углу.'),
+  array('ru', 'Записка с надписью AT[d# M__ y##].', '1355270400', 'Записка с надписью 12 Декабря 2012.'),
   array('ru', 'Записка с надписью d# m__ y## в правом верхнем углу.', '1355270400', 'Записка с надписью 12 декабрь 2012 в правом верхнем углу.'),
   array('This reply was posted AGO[s-d]IF-FAR[on d#my]AT D__.', 3*3600, 'This reply was posted after 3 hours at Thursday.'),
   array('This reply was posted AGO[s-d]IF-FAR[on d#my]AT D__.', 40*24*3600, 'This reply was posted on 10/08/2011 at Wednesday.'),
@@ -950,4 +1103,4 @@ DateFmt::$selfTests = array(
   array('ru', '...и за AGO[*]_ перед следующим).', -5*60, '...и за 5 минут перед следующим).')
 );
 
-//var_dump(array_filter(DateFmt::RunSelfTests()));
+//print('<pre>') and var_dump(array_filter(DateFmt::RunSelfTests()));

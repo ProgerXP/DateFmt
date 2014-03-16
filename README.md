@@ -31,6 +31,13 @@ $formatted = DateFmt::Format('D__, d##my', $your_timestamp, 'ru');
 The first argument is the format string, the second - timestamp (`time()` if omitted), the third - language (`en` if omitted).
 
 ## Installation
+
+### Composer
+
+Available under `proger/datefmt` at [Packagist](https://packagist.org/packages/proger/datefmt).
+
+### Laravel 3
+
 As usual, use the **Artisan**:
 
 ```

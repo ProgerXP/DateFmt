@@ -1,5 +1,16 @@
 {
   "name": "proger/datefmt",
   "description": "Date formatting unit. Supports relative time ('1 day ago'), uses easy-to-remember format strings ('d#' for day, 'D__' for its name) and supports natural localizations.",
-  "require": {"ext-mbstring": "*"}
+  "keywords": ["date", "time", "formatting"],
+  "homepage": "https://github.com/ProgerXP/DateFmt",
+  "license": "SAX-PD",
+  "authors": [{
+    "name": "Proger",
+    "email": "proger.xp@gmail.com",
+    "homepage": "http://proger.me"
+  }],
+  "require": {"ext-mbstring": "*"},
+  "autoload": {
+    "classmap": ["."]
+  }
 }

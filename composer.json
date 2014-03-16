@@ -1,0 +1,5 @@
+{
+  "name": "proger/datefmt",
+  "description": "Date formatting unit. Supports relative time ('1 day ago'), uses easy-to-remember format strings ('d#' for day, 'D__' for its name) and supports natural localizations.",
+  "require": {"ext-mbstring": "*"}
+}
